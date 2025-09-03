@@ -1,0 +1,145 @@
+---
+title: "MPDW kuliah 2"
+author: "Abdullah Zeith Alfarizy (G1401231060)"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(lmtest) # Untuk Uji Durbin-Watson
+library(orcutt) # Untuk metode Cochrane-Orcutt
+library(HoRM)   # Untuk metode Hildreth-Lu
+```
+
+```{r}
+library(readxl)
+ipm_semarang <- read_excel("C:/Users/FAQIH/Downloads/Data IPM Semarang.xlsx")
+ipm_semarang
+```
+```{r}
+names(ipm_semarang)[1] <- "Tahun"
+names(ipm_semarang)[2] <- "IPM"
+```
+
+```{r}
+df_ipm <- ipm_semarang[5:14, ] #IPM 10 tahun terakhir
+```
+
+# Model Regresi linear 
+```{r}
+model_1 <- lm(IPM ~ Tahun, data=df_ipm)
+summary(model_1)
+```
+# Identifikasi Autokolorelasi
+```{r}
+library(ggplot2)
+
+res_data <- data.frame(
+  order = 1:length(resid(model_1)),
+  residuals = resid(model_1)
+)
+
+ggplot(res_data, aes(x=order, y=residuals)) +
+  geom_line(color="blue") +
+  geom_point() +
+  geom_hline(yintercept=0, color="red", linetype="dashed") +
+  labs(title="Residual vs Order", x="Order (urutan data)", y="Residuals")
+```
+Dari plot residual vs order terlihat adanya pola yang berarti dicurigai adanya autokorelasi pada residual data 
+```{r}
+acf(resid(model_1), main="ACF Residuals")
+```
+Pada plot ACF terlihat adanya garis yang melewati batas kepercayaan (garis biru), yang mengindikasikan masih terdapat autokorelasi pada residual. 
+```{r}
+library(lmtest)
+dwtest(model_1)
+```
+Dari hasil uji durbin watson didapat nilai p-value < 0.05 sehingga menolak H0 yang artinya terdapat pelanggaran asumsi yaitu autokorelasi
+# Cochrane Orcutt
+```{r}
+model_co2 <- cochrane.orcutt(model_1)
+summary(model_co2)
+
+# rho paling optimum
+rho <- model_co2$rho
+cat("Rho optimum:", rho)
+```
+**Hasil Penanganan (C-O):**
+Dari statistik Durbin Watson yang setelah transformasi didapatkan nilai yang sekarang jauh lebih dekat ke 2, dan p-value-nya : 0.205 (\> 0.05) menunjukkan bahwa **autokorelasi sudah berhasil diatasi**.
+
+
+**Verifikasi Manual:**
+```{r}
+ipm.trans <- df_ipm$IPM[-1] - df_ipm$IPM[-10]*rho # [-1] : ngedrop amatan pertama
+tahun.trans <- df_ipm$Tahun[-1] - df_ipm$Tahun[-10]*rho
+model_co_manual <- lm(ipm.trans~tahun.trans)
+
+b0_co_manual <- coef(model_co_manual)[1]/(1-rho)
+b1_co_manual <- coef(model_co_manual)[2]
+cat("Koefisien manual Cochrane-Orcutt:\n")
+cat("b0:", b0_co_manual, "\n")
+cat("b1:", b1_co_manual, "\n")
+```
+# Metode 2: Hildreth-Lu
+```{r}
+#Penanganan Autokorelasi Hildreth lu
+# Hildreth-Lu
+hildreth.lu.func<- function(r, model_1){
+  x <- model.matrix(model_1)[,-1]
+  y <- model.response(model.frame(model_1))
+  n <- length(y)
+  t <- 2:n
+  y <- y[t]-r*y[t-1]
+  x <- x[t]-r*x[t-1]
+  
+  return(lm(y~x))
+}
+
+#Pencariab rho yang meminimumkan SSE
+r <- c(seq(0.1,0.9, by= 0.1))
+tab <- data.frame("rho" = r, "SSE" = sapply(r, function(i){deviance(hildreth.lu.func(i, model_1))}))
+round(tab, 4)
+```
+```{r}
+#Rho optimal di sekitar 0.4
+rOpt <- seq(0.2,0.5, by= 0.001)
+tabOpt <- data.frame("rho" = rOpt, "SSE" = sapply(rOpt, function(i){deviance(hildreth.lu.func(i, model_1))}))
+head(tabOpt[order(tabOpt$SSE),])
+```
+```{r}
+#Grafik SSE optimum
+par(mfrow = c(1,1))
+plot(tab$SSE ~ tab$rho , type = "l", xlab = "Rho", ylab = "SSE")
+abline(v = tabOpt[tabOpt$SSE==min(tabOpt$SSE),"rho"], lty = 2, col="red",lwd=2)
+text(x=0.353, y=0.3759558, labels = "rho=0.353", cex = 0.8)
+```
+```{r}
+model_hlu <- hildreth.lu(df_ipm$IPM, df_ipm$Tahun, rho = 0.353)
+summary(model_hlu)
+```
+```{r}
+cat("y = ", coef(model_hlu)[1]/(1-0.793), "+", coef(model_hlu)[2],"x", sep = "")
+```
+```{r}
+dwtest(model_hlu)
+```
+-   Plot yang dihasilkan secara visual menunjukkan nilai ρ = 0.353 yang menjadi "juara" (memiliki SSE terendah).
+-   Hasil summary memberikan model akhir yang juga sudah "sehat", dengan statistik D-W yang sudah membaik.
+```{r}
+# Menghitung SSE untuk setiap model secara manual
+sse_awall <- sum(residuals(model_1)^2)
+sse_co2 <- sum(residuals(model_co2)^2)
+sse_hlu <- sum(residuals(model_hlu)^2)
+
+# Membuat tabel perbandingan
+data.frame(
+  Metode = c("Model Awal (Sakit)", "Cochrane-Orcutt (Sehat)", "Hildreth-Lu (Sehat)"),
+  SSE = c(sse_awall, sse_co2, sse_hlu),
+  DW_Statistic = c(dwtest(model_1)$statistic, model_co2$DW[3], dwtest(model_hlu)$statistic)
+)
+
+```
+-  metode Cochrane-Orcutt memiliki nilai SSE yang lebih tinggi dari model awal sedangkan Hildreth-Lu berhasil menurunkan SSE model, artinya model baru yang dihasilkan Hildreth-Lu lebih akurat.
+-   Keduanya juga berhasil menghilangkan autokorelasi, yang ditunjukkan oleh statistik D-W yang mendekati 2.
+-   Model akhir yang seharusnya kita gunakan adalah model Hidreth-Lu karena berhasil menangani autokorelasi dan sekaligus menurunkan nilai SSE sehingga estimasi koefisien dan uji signifikansinya sekarang jauh lebih dapat dipercaya.
+
