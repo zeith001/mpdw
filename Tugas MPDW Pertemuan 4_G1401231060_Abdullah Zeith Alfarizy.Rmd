@@ -1,0 +1,555 @@
+---
+title: "Tugas MPDW Pertemuan 4"
+author: "Abdullah Zeith Alfarizy (G1401231060)"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+### white noise
+
+```{r}
+set.seed(1060)
+wns <- rnorm(300)
+ts.plot(wns)
+```
+```{r}
+par(mfrow = c(1, 2)) 
+acf(wns)
+acf(wns, xlim = c(1, 20))
+```
+Berdasarkan plot acf diatas terlihat bahwa *white noise* tidak memiliki autokorelasi. Lag ke-0 adalah korelasi observasi ke-t dengan dirinya sendiri dan nilai korelasinya sudah pasti 1.
+
+# Proses MA
+
+Proses MA secara umum :
+$$
+y_{t} = c + e_t + \theta_{1}e_{t-1} + \theta_{2}e_{t-2} + \dots + \theta_{q}e_{t-q} = c+{e_t+\sum_{i=1}^p \theta_ie_{t-i}}
+$$
+
+## Pembangkitan Proses MA(2)
+
+$$
+y_t = e_t+0.4e_{t-1}+0.6e_{t-2}
+$$
+
+Akan dibangkitkan proses MA(2) dengan $\theta1 = 0.4$ dan $\theta2 = 0.6$ sebanyak 300 observasi dan $c=0$. Karena diperlukan dua nilai awal untuk $e_{t-1}$ dan $e_{t-2}$ maka masukkan dua nilai pertama white noise sebagai nilai awal.
+
+```{r}
+set.seed(1060)
+ma2 <- wns[1:2]
+```
+
+```{r}
+for (i in 3:300) {
+  ma2[i] <- wns[i] + 0.4 * wns[i - 1] + 0.6 * wns[i - 2]
+}
+ma2
+```
+
+#### Membangkitkan dengan arima.sim
+
+```{r}
+ma_2 <- arima.sim(list(order=c(0,0,2), ma=c(0.4, 0.6)), n=300)
+ma_2
+```
+## Karakteristik MA(2)
+
+### Plot Time Series
+
+```{r}
+ts.plot(ma2)
+```
+Berdasarkan plot time series, terlihat bahwa data MA(2) yang dibangkitkan bergerak di sekitar rataannya atau dapat dikatakan MA(2) sudah stasioner dalam rataan.
+
+### Plot ACF
+
+```{r}
+acf(ma2,lag.max = 20)
+```
+Berdasarkan plot ACF tersebut, terlihat bahwa plot ACF *cuts off* di dua lag pertama (sudah sesuai dengan karakteristik MA secara teoritis dimana MA(1) pada plot ACF akan cut off pada lag pertama, MA(2) akan cut off pada 2 lag pertama dan seterusnya).
+
+### Plot PACF
+
+```{r}
+pacf(ma2)
+```
+Berdasarkan plot PACF tersebut, terlihat bahwa plot PACF cenderung *tails off* dan membentuk gelombang sinus
+
+### Plot EACF
+
+```{r}
+TSA::eacf(ma2)
+```
+Berdasarkan pola segitiga nol pada plot EACF, terlihat bahwa segitiga nol berada pada ordo AR(0) dan ordo MA(2)
+
+### Scatterplot Antar Lag
+
+#### Korelasi antara $Y_t$ dengan $Y_{t-1}$
+
+```{r}
+#Yt
+yt_ma <- ma2[-1]
+yt_ma
+#Yt-1
+yt_1_ma <- ma2[-300]
+yt_1_ma
+```
+```{r}
+plot(y=yt_ma,x=yt_1_ma)
+```
+Berdasarkan scatterplot tersebut, walaupun terlihat cukup acak namun masih bisa diidentifikas bahwa terdapat hubungan positif antara $Y_t$ dengan $Y_{t-1}$.
+
+```{r}
+cor(yt_ma,yt_1_ma)
+```
+#### Korelasi antara $Y_t$ dengan $Y_{t-2}$
+
+```{r}
+#Yt
+yt_ma2 <- ma2[-c(1,2)]
+yt_ma2
+#Yt-2
+yt_2_ma <- ma2[-c(299,300)]
+yt_2_ma
+```
+
+```{r}
+plot(y=yt_ma2,x=yt_2_ma)
+```
+Berdasarkan scatterplot tersebut pola korelasi yang terlihat tidak jauh berbeda dengan korelasi antara $Y_t$ dengan $Y_{t-1}$, dimana terlihat bahwa terdapat hubungan positif antara $Y_t$ dengan $Y_{t-2}$.
+
+```{r}
+cor(yt_ma2,yt_2_ma)
+```
+#### Korelasi antara $Y_t$ dengan $Y_{t-3}$
+
+```{r}
+#Yt
+yt_ma3 <- ma2[-c(1,2,3)]
+yt_ma3
+#Yt-2
+yt_3_ma <- ma2[-c(298,299,300)]
+yt_3_ma
+```
+```{r}
+plot(y=yt_ma3,x=yt_3_ma)
+```
+Berdasarkan scatterplot tersebut, terlihat bahwa cenderung tidak terdapat hubungan antara $Y_t$ dengan $Y_{t-3}$.
+
+```{r}
+cor(yt_ma3,yt_3_ma)
+```
+### Korelasi Secara Teoritis
+
+$$
+\rho_1 = \frac{\gamma_1}{\gamma_0}
+= \frac{\theta_1 + \theta_1 \theta_2}{1 + \theta_1^2 + \theta_2^2}
+= \frac{0.4 + (0.4)(0.6)}{1 + 0.4^2 + 0.6^2}
+= \frac{0.64}{1.52}
+= 0.4211
+$$
+
+$$
+\rho_2 = \frac{\gamma_2}{\gamma_0}
+= \frac{\theta_2}{1 + \theta_1^2 + \theta_2^2}
+= \frac{0.6}{1.52}
+= 0.3947
+$$
+
+### Jika dibuat dalam syntax sebagai berikut :
+```{r}
+# Parameter
+theta1 <- 0.4
+theta2 <- 0.6
+sigma2 <- 1  # Varian white noise
+
+# Autokovarians
+gamma0 <- (1 + theta1^2 + theta2^2) * sigma2
+gamma1 <- (theta1 + theta1 * theta2) * sigma2
+gamma2 <- theta2 * sigma2
+
+# Autokorelasi teoritis
+rho1 <- gamma1 / gamma0
+rho2 <- gamma2 / gamma0
+rho3 <- 0  # MA(2) -> ρk = 0 untuk k > 2
+
+cat("ρ1 =", rho1, "\n")
+cat("ρ2 =", rho2, "\n")
+cat("ρ3 =", rho3, "\n")
+
+```
+Korelasi antara $Y_t$ dengan $Y_{t-1}$ dan korelasi antara $Y_t$ dengan $Y_{t-2}$ dari hasil simulasi cukup mendekati perhitungan teoritis sedangkan untuk korelasi $Y_t$ dengan $Y_{t-3}$ secara teori akan == 0.
+
+# Proses AR
+
+Proses AR dapat dituliskan sebagai berikut:
+
+$$
+y_{t} = c + e_t + \phi_{1}Y_{t-1} + \phi_{2}Y_{t-2} + \dots + \phi_{q}Y_{t-q} = c+{e_t+\sum_{i=1}^p \phi_iY_{t-i}}
+$$
+
+## Pembangkitan Proses AR(2)
+
+Akan ddibangkitkan proses AR(2) dengan $\phi = 0.5$ dan $\phi = 0.2$ sebanyak 300 observasi dan $c=0$.
+
+$$ Y_t = e_t+0.5Y_{t-1}+0.2Y_{t-2} $$
+
+```{r}
+set.seed(1060)
+```
+
+```{r}
+n <-length(wns)
+n
+ar2 <- c(1:n) 
+for (i in 3:n) {
+  ar2[i] <- wns[i] + 0.5 * ar2[i - 1] + 0.2 * ar2[i - 2]
+}
+ar2
+```
+### Membangkitkan dengan arima.sim
+
+```{r}
+ar_2 <- arima.sim(list(order=c(2,0,0), ar=c(0.5, 0.2)), n=300)
+ar_2
+```
+## Karakteristik AR(2)
+
+### Plot Time Series
+
+```{r}
+ts.plot(ar2)
+```
+Berdasarkan plot time series, terlihat bahwa data AR(2) yang dibangkitkan bergerak di sekitar rataannya atau dapat dikatakan AR(2) sudah stasioner dalam rataan
+
+### Plot ACF
+
+```{r}
+acf(ar2)
+```
+Berdasarkan plot ACF tersebut terlihat bahwa plot ACF cenderung *tails off*.
+
+### Plot PACF
+
+```{r}
+pacf(ar2)
+```
+Berdasarkan plot PACF tersebut, terlihat bahwa plot PACF *cuts off* pada dua lag pertama, sejalan dengan teori yang ada.
+
+### Plot EACF
+
+```{r}
+TSA::eacf(ar2)
+```
+Berdasarkan pola segitiga nol pada plot EACF, terlihat bahwa segitiga nol berada pada ordo AR(2) dan ordo MA(0).
+
+### Scatterplot Antar Lag
+
+#### Korelasi antara $Y_t$ dengan $Y_{t-1}$
+
+```{r}
+#Yt
+yt_ar <- ar2[-1]
+yt_ar
+#Yt-1
+yt_1_ar <- ar2[-300]
+yt_1_ar
+```
+
+```{r}
+plot(y=yt_ar,x=yt_1_ar)
+```
+Berdasarkan scatterplot tersebut, terlihat bahwa terdapat hubungan positif yang cukup kuat antara $Y_t$ dengan $Y_{t-1}$.
+
+```{r}
+cor(yt_ar,yt_1_ar)
+```
+#### Korelasi antara $Y_t$ dengan $Y_{t-2}$
+
+```{r}
+#Yt
+yt_ar2 <- ar2[-c(1,2)]
+yt_ar2
+#Yt-2
+yt_2_ar <- ar2[-c(299,300)]
+yt_2_ar
+```
+```{r}
+plot(y=yt_ar2,x=yt_2_ar)
+```
+Berdasarkan scatterplot tersebut, terlihat bahwa terdapat hubungan positif antara $Y_t$ dengan $Y_{t-2}$.
+
+```{r}
+cor(yt_ar2,yt_2_ar)
+```
+#### Korelasi antara $Y_t$ dengan $Y_{t-3}$
+
+```{r}
+#Yt
+yt_ar3 <- ar2[-c(1,2,3)]
+yt_ar3
+#Yt-2
+yt_3_ar <- ar2[-c(298,299,300)]
+yt_3_ar
+```
+```{r}
+plot(y=yt_ar3,x=yt_3_ar)
+```
+Berdasarkan scatterplot tersebut, terlihat bahwa masih terdapat hubungan positif antara $Y_t$ dengan $Y_{t-3}$ walaupun terlihat juga bahwa hubungannya tidak terlalu kuat.
+
+```{r}
+cor(yt_ar3,yt_3_ar)
+```
+#### Korelasi Sercara Teoritis
+
+$$
+\rho_1 = \frac{\gamma_1}{\gamma_0}
+= \frac{\frac{\phi_1}{1 - \phi_2}\gamma_0}{\gamma_0}
+= \frac{\phi_1}{1 - \phi_2}
+= \frac{0.5}{1 - 0.2}
+= 0.625
+$$
+
+$$
+\rho_2 = \frac{\gamma_2}{\gamma_0}
+= \frac{\phi_1\gamma_1 + \phi_2\gamma_0}{\gamma_0}
+= \phi_1\rho_1 + \phi_2
+= 0.5(0.625) + 0.2
+= 0.5125
+$$
+
+$$
+\rho_3 = \phi_1 \rho_2 + \phi_2 \rho_1
+= 0.5(0.5125) + 0.2(0.625)
+= 0.3813
+$$
+
+### Jika dibuat dalam syntax
+
+```{r}
+phi1 <- 0.5
+phi2 <- 0.2
+sigma2 <- 1
+
+# γ1 relatif terhadap γ0
+gamma1_over_gamma0 <- phi1 / (1 - phi2)
+
+# γ2 relatif terhadap γ0
+gamma2_over_gamma0 <- phi1 * gamma1_over_gamma0 + phi2
+
+# γ0 (varian)
+gamma0 <- sigma2 / (1 - phi1 * gamma1_over_gamma0 - phi2 * gamma2_over_gamma0)
+
+# γ1, γ2
+gamma1 <- gamma1_over_gamma0 * gamma0
+gamma2 <- gamma2_over_gamma0 * gamma0
+
+# Autokorelasi ρ1, ρ2
+rho1 <- gamma1 / gamma0
+rho2 <- gamma2 / gamma0
+
+# Autokorelasi ρ3 pakai rumus rekursif
+rho3 <- phi1 * rho2 + phi2 * rho1
+
+cat("ρ1 =", rho1, "\n")
+cat("ρ2 =", rho2, "\n")
+cat("ρ3 =", rho3, "\n")
+
+```
+Korelasi antara $Y_t$ dengan $Y_{t-1}$, korelasi antara $Y_t$ dengan $Y_{t-2}$ dan korelasi $Y_t$ dengan $Y_{t-3}$ dari hasil simulasi mendekati perhitungan teoritis.
+
+# ARMA (2,2)
+
+## Fungsi pembangkitan ARMA
+
+Proses ARMA secara umum:
+$$
+y_t = c + \phi_1 y_{t-1} + \phi_2 y_{t-2} + \dots + \phi_p y_{t-p} + e_t + \theta_1 e_{t-1} + \theta_2 e_{t-2} + \dots + \theta_q e_{t-q}
+$$
+
+Akan dibangkitkan proses ARMA dengan $\theta1 = 0.4$ dan $\theta2 = 0.6$ , $\phi = 0.5$ dan $\phi = 0.2$ sebanyak 300 observasi dan $c=0$.
+
+$$
+y_t = 0.5 y_{t-1} + 0.2 y_{t-2} + e_t + 0.4 e_{t-1} + 0.6 e_{t-2}
+$$
+
+```{r}
+set.seed(1060)
+n = length(wns)
+theta1 = 0.4
+theta2 = 0.6
+phi1 = 0.5
+phi2 = 0.2
+
+y.arma2=c(1:n)
+for (i in 3:n) {
+  y.arma2[i] <- phi1*y.arma2[i-1] + 
+               phi2*y.arma2[i-2] + 
+               wns[i] + 
+               theta1*wns[i-1] + 
+               theta2*wns[i-2]
+}
+y.arma2
+```
+
+### Membangkitkan dengan arima.sim
+
+```{r}
+arma22 <- arima.sim(list(order=c(2,0,2), ar=c(0.5, 0.2), ma=c(0.4, 0.6)), n=300)
+arma22
+```
+## Karakteristik ARMA(2,2)
+
+### Plot Time Series
+
+```{r}
+par(mfrow = c(1, 2))
+ts.plot(y.arma2)
+ts.plot(arma22)
+par(mfrow = c(1, 1))
+```
+Berdasarkan plot time series tersebut, terlihat bahwa model ARMA(2,2) baik dari data bangkitan manual ataupun dengan `arima.sim()` keduanya cenderung stasioner dalam rataan.
+
+### Plot ACF
+
+```{r}
+par(mfrow = c(1, 2))
+acf(y.arma2)
+acf(arma22)
+par(mfrow = c(1, 1))
+```
+Berdasarkan plot ACF tersebut, terlihat bahwa model ARMA(2,2) hasil simulasi baik dari data bangkitan manual ataupun dengan `arima.sim()` keduanya memiliki plot ACF yang *tails off*.
+
+### Plot PACF
+
+```{r}
+par(mfrow = c(1, 2))
+pacf(y.arma2)
+pacf(arma22)
+par(mfrow = c(1, 1))
+```
+Berdasarkan plot PACF tersebut, terlihat bahwa model ARMA(2,2) hasil simulasi baik dari data bangkitan manual ataupun dengan `arima.sim()` memiliki plot PACF yang *tails off*
+
+### Plot EACF
+
+```{r}
+TSA::eacf(y.arma2)
+TSA::eacf(arma22)
+```
+Berdasarkan pola segitiga nol pada plot EACF, terlihat bahwa segitiga nol pada model ARMA(2,2) hasil simulasi baik dari data bangkitan manual ataupun dengan `arima.sim()` berada pada ordo AR(2) dan ordo MA(2)
+
+### Scatterplot Antar Lag
+
+#### Korelasi antara $Y_t$ dengan $Y_{t-1}$
+
+```{r}
+#Yt
+yt_arma <- arma22[-1]
+yt_arma
+#Yt-1
+yt_1_arma <- arma22[-300]
+yt_1_arma
+```
+
+```{r}
+plot(y=yt_arma,x=yt_1_arma)
+```
+Berdasarkan scatterplot tersebut, terlihat bahwa terdapat hubungan positif yang kuat antara $Y_t$ dengan $Y_{t-1}$.
+
+```{r}
+cor(yt_arma,yt_1_arma)
+```
+#### Korelasi antara $Y_t$ dengan $Y_{t-2}$
+
+```{r}
+#Yt
+yt_arma2 <- arma22[-c(1,2)]
+yt_arma2
+#Yt-2
+yt_2_arma <- arma22[-c(299,300)]
+yt_2_arma
+```
+```{r}
+plot(y=yt_arma2,x=yt_2_arma)
+```
+Berdasarkan scatterplot tersebut, terlihat bahwa terdapat hubungan positif yang kuat antara $Y_t$ dengan $Y_{t-2}$.
+
+```{r}
+cor(yt_arma2,yt_2_arma)
+```
+#### Korelasi antara $Y_t$ dengan $Y_{t-3}$
+
+```{r}
+#Yt
+yt_arma3 <- arma22[-c(1,2,3)]
+yt_arma3
+#Yt-2
+yt_3_arma <- arma22[-c(298,299,300)]
+yt_3_arma
+```
+```{r}
+plot(y=yt_arma3,x=yt_3_arma)
+```
+Berdasarkan scatterplot tersebut, terlihat bahwa terdapat hubungan positif antara $Y_t$ dengan $Y_{t-1}$.
+
+```{r}
+cor(yt_arma3,yt_3_arma)
+```
+#### Korelasi Secara Teoritis
+
+```{r}
+# Parameter
+phi1 <- 0.5
+phi2 <- 0.2
+theta1 <- 0.4
+theta2 <- 0.6
+sigma2 <- 1   # bisa 1 karena rho tidak tergantung sigma2
+
+# Banyak psi yang dihitung (M besar untuk aproksimasi)
+M <- 200
+
+# Hitung psi_j
+psi <- numeric(M+1)
+psi[1] <- 1            # psi_0 = 1  -> index 1 di R
+if (M >= 1) psi[2] <- phi1 * psi[1] + theta1  # psi_1
+if (M >= 2) psi[3] <- phi1 * psi[2] + phi2 * psi[1] + theta2  # psi_2
+if (M >= 3) {
+  for (k in 4:(M+1)) { # k di R index = j+1
+    psi[k] <- phi1 * psi[k-1] + phi2 * psi[k-2]
+  }
+}
+
+# Fungsi untuk gamma_k aproksimasi
+gamma_k <- function(k, psi_vec) {
+  # gamma_k = sum_{j=0..M-k} psi_j * psi_{j+k}
+  # indeks R: psi[j+1] * psi[j+k+1]
+  M <- length(psi_vec) - 1
+  s <- 0
+  for (j in 0:(M - k)) {
+    s <- s + psi_vec[j+1] * psi_vec[j+k+1]
+  }
+  return(s * sigma2)
+}
+
+# Hitung gamma_0, gamma_1, gamma_2, gamma_3
+gamma0 <- gamma_k(0, psi)
+gamma1 <- gamma_k(1, psi)
+gamma2 <- gamma_k(2, psi)
+gamma3 <- gamma_k(3, psi)
+
+# Autokorelasi
+rho1 <- gamma1 / gamma0
+rho2 <- gamma2 / gamma0
+rho3 <- gamma3 / gamma0
+
+# Tampilkan
+rho1; rho2; rho3
+
+```
+Korelasi antara $Y_t$ dengan $Y_{t-1}$, korelasi antara $Y_t$ dengan $Y_{t-2}$ dan korelasi $Y_t$ dengan $Y_{t-3}$ dari hasil simulasi mendekati perhitungan teoritis.
+
