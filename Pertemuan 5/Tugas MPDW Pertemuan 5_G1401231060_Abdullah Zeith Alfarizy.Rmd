@@ -340,3 +340,4 @@ Gambar di atas menunjukkan nilai λ optimum (rounded value) sebesar **1** dan se
 
 
 
+
